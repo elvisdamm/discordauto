@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dispatch — Mensajes de Discord programados</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◆</span>
+      <div class="brand-text">
+        <h1>Dispatch</h1>
+        <p>Consola de mensajes programados para Discord</p>
+      </div>
+    </div>
+    <div class="topbar-status" id="cronStatus">
+      <span class="pulse-dot" id="pulseDot"></span>
+      <span id="cronStatusText">Comprobando cola…</span>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <!-- ============ COLUMNA IZQUIERDA: COMPOSITOR ============ -->
+    <section class="panel compose" aria-label="Compositor de mensaje">
+
+      <div class="panel-head">
+        <h2>01 — Destino</h2>
+      </div>
+      <div class="field-group">
+        <label for="webhookUrl">URL del webhook</label>
+        <input type="url" id="webhookUrl" placeholder="https://discord.com/api/webhooks/…" autocomplete="off" />
+        <div class="row two">
+          <div>
+            <label for="username">Nombre (opcional)</label>
+            <input type="text" id="username" placeholder="Nombre del bot" />
+          </div>
+          <div>
+            <label for="avatarUrl">Avatar URL (opcional)</label>
+            <input type="url" id="avatarUrl" placeholder="https://…" />
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-head">
+        <h2>02 — Contenido</h2>
+      </div>
+      <div class="field-group">
+        <label for="content">Texto del mensaje</label>
+        <textarea id="content" rows="3" maxlength="2000" placeholder="Escribe el mensaje que acompaña a los embeds (opcional si ya hay embeds)…"></textarea>
+        <span class="hint" id="contentCounter">0 / 2000</span>
+      </div>
+
+      <div class="panel-head panel-head-actions">
+        <h2>03 — Embeds</h2>
+        <button type="button" class="btn ghost small" id="addEmbedBtn">+ Añadir embed</button>
+      </div>
+      <div id="embedsList" class="embeds-list"></div>
+
+      <div class="panel-head">
+        <h2>04 — Programación</h2>
+      </div>
+      <div class="field-group">
+        <div class="row two">
+          <div>
+            <label for="label">Etiqueta interna</label>
+            <input type="text" id="label" placeholder="Ej. Anuncio de evento" />
+          </div>
+          <div>
+            <label for="scheduledAt">Fecha y hora de envío</label>
+            <input type="datetime-local" id="scheduledAt" />
+          </div>
+        </div>
+        <span class="hint">Se usará la zona horaria de este navegador: <span id="tzLabel" class="mono"></span></span>
+      </div>
+
+      <div class="compose-actions">
+        <button type="button" class="btn subtle" id="testBtn">Enviar prueba ahora</button>
+        <button type="button" class="btn primary" id="scheduleBtn">Programar envío</button>
+      </div>
+      <p class="form-message" id="formMessage" role="status"></p>
+
+    </section>
+
+    <!-- ============ COLUMNA DERECHA: PREVIEW ============ -->
+    <section class="panel preview" aria-label="Vista previa">
+      <div class="panel-head">
+        <h2>Vista previa</h2>
+      </div>
+      <div class="discord-mock">
+        <div class="discord-message" id="previewMessage">
+          <div class="discord-avatar" id="previewAvatar">D</div>
+          <div class="discord-body">
+            <div class="discord-meta">
+              <span class="discord-username" id="previewUsername">Webhook</span>
+              <span class="discord-time">hoy a las 00:00</span>
+            </div>
+            <div class="discord-content" id="previewContent"></div>
+            <div class="discord-embeds" id="previewEmbeds"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ============ COLA DE ENVÍO ============ -->
+  <section class="panel queue" aria-label="Cola de despacho">
+    <div class="panel-head panel-head-actions">
+      <h2>Cola de despacho</h2>
+      <button type="button" class="btn ghost small" id="refreshQueueBtn">Actualizar</button>
+    </div>
+    <div id="queueEmpty" class="queue-empty">Todavía no has programado ningún mensaje.</div>
+    <ol class="timeline" id="queueList"></ol>
+  </section>
+
+</div>
+
+<template id="embedTemplate">
+  <div class="embed-card">
+    <div class="embed-card-head">
+      <span class="embed-index mono"></span>
+      <input type="color" class="embed-color" value="#f2a93b" title="Color del embed" />
+      <button type="button" class="btn ghost small danger embed-remove">Eliminar</button>
+    </div>
+
+    <div class="row two">
+      <div>
+        <label>Autor</label>
+        <input type="text" class="embed-author-name" placeholder="Nombre del autor" />
+      </div>
+      <div>
+        <label>Icono del autor</label>
+        <input type="url" class="embed-author-icon" placeholder="https://…" />
+      </div>
+    </div>
+
+    <label>Título</label>
+    <input type="text" class="embed-title" placeholder="Título del embed" />
+
+    <label>URL del título</label>
+    <input type="url" class="embed-url" placeholder="https://… (opcional, hace el título clicable)" />
+
+    <label>Descripción</label>
+    <textarea class="embed-description" rows="3" maxlength="4096" placeholder="Descripción del embed…"></textarea>
+
+    <label>Campos</label>
+    <div class="embed-fields"></div>
+    <button type="button" class="btn ghost small add-field">+ Añadir campo</button>
+
+    <div class="row two">
+      <div>
+        <label>Imagen (grande)</label>
+        <input type="url" class="embed-image" placeholder="https://…" />
+      </div>
+      <div>
+        <label>Miniatura</label>
+        <input type="url" class="embed-thumbnail" placeholder="https://…" />
+      </div>
+    </div>
+
+    <div class="row two">
+      <div>
+        <label>Texto del pie</label>
+        <input type="text" class="embed-footer-text" placeholder="Pie del embed" />
+      </div>
+      <div>
+        <label>Icono del pie</label>
+        <input type="url" class="embed-footer-icon" placeholder="https://…" />
+      </div>
+    </div>
+    <label class="checkbox-row">
+      <input type="checkbox" class="embed-timestamp" />
+      Incluir marca de tiempo (hora de envío)
+    </label>
+  </div>
+</template>
+
+<template id="fieldTemplate">
+  <div class="embed-field-row">
+    <input type="text" class="field-name" placeholder="Nombre del campo" maxlength="256" />
+    <input type="text" class="field-value" placeholder="Valor del campo" maxlength="1024" />
+    <label class="checkbox-row inline"><input type="checkbox" class="field-inline" /> en línea</label>
+    <button type="button" class="btn ghost small danger field-remove" title="Eliminar campo">✕</button>
+  </div>
+</template>
+
+<template id="queueItemTemplate">
+  <li class="timeline-item">
+    <div class="timeline-node"><span class="status-dot"></span></div>
+    <div class="timeline-card">
+      <div class="timeline-card-head">
+        <span class="timeline-label"></span>
+        <span class="timeline-status"></span>
+      </div>
+      <div class="timeline-meta">
+        <span class="timeline-time mono"></span>
+        <span class="timeline-countdown mono"></span>
+      </div>
+      <p class="timeline-snippet"></p>
+      <p class="timeline-error"></p>
+      <div class="timeline-actions"></div>
+    </div>
+  </li>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>

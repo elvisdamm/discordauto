@@ -92,9 +92,9 @@ function addEmbedCard(embed) {
   const tpl = $('#embedTemplate').content.cloneNode(true);
   const card = tpl.querySelector('.embed-card');
   card._embed = embed;
-  renderEmbedIndexes();
   bindEmbedCard(card, embed);
   el.embedsList.appendChild(card);
+  renderEmbedIndexes();
 }
 
 function renderEmbedIndexes() {
@@ -205,7 +205,7 @@ function renderPreview() {
 
   el.previewEmbeds.innerHTML = '';
   embeds.forEach((embed) => {
-    if (!embed.title && !embed.description && !embed.fields.length && !embed.image.url && !embed.author.name) return;
+    if (!embed.title && !embed.description && !embed.fields.length && !embed.image.url && !embed.thumbnail.url && !embed.author.name && !embed.footer.text) return;
     const box = document.createElement('div');
     box.className = 'd-embed';
     box.style.borderLeftColor = intToHex(embed.color);
@@ -281,7 +281,7 @@ el.content.addEventListener('input', () => {
 // ---------- Construcción de payload para la API ----------
 function buildEmbedsPayload() {
   return embeds
-    .filter((e) => e.title || e.description || e.fields.length || e.image.url || e.author.name)
+    .filter((e) => e.title || e.description || e.fields.length || e.image.url || e.thumbnail.url || e.author.name || e.footer.text)
     .map((e) => {
       const out = { color: e.color };
       if (e.title) out.title = e.title;

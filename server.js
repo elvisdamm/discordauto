@@ -1,9 +1,15 @@
+console.log('[server] iniciando...', { PORT: process.env.PORT, DATABASE_PATH: process.env.DATABASE_PATH, NODE_ENV: process.env.NODE_ENV });
+process.on('uncaughtException', e => { console.error('[fatal] uncaughtException', e && e.stack || e); process.exit(1); });
+process.on('unhandledRejection', e => console.error('[fatal] unhandledRejection', e && e.stack || e || e));
+
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
 const fetch = require('node-fetch');
-const db = require('./db');
-const scheduler = require('./scheduler');
+let db;
+try { db = require('./db'); console.log('[server] db cargado'); } catch (e) { console.error('[fatal] db require', e.stack || e); throw e; }
+let scheduler;
+try { scheduler = require('./scheduler'); console.log('[server] scheduler cargado'); } catch (e) { console.error('[fatal] scheduler require', e.stack || e); throw e; }
 
 const app = express();
 const PORT = process.env.PORT || 3000;

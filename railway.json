@@ -6,7 +6,7 @@
   },
   "deploy": {
     "startCommand": "node server.js",
-    "healthcheckPath": "/api/messages",
+    "healthcheckPath": "/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "on_failure",
     "restartPolicyMaxRetries": 3

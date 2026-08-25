@@ -1,7 +1,11 @@
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const db = new Database(path.join(__dirname, 'data.sqlite'));
+// Railway: usa Volume montado en /data. Local: usa data.sqlite junto al codigo.
+// Permite override con DATABASE_PATH (ej: /data/data.sqlite)
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'data.sqlite');
+
+const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 
 db.exec(`

@@ -38,6 +38,7 @@
       <div class="field-group">
         <label for="webhookUrl">URL del webhook</label>
         <input type="url" id="webhookUrl" placeholder="https://discord.com/api/webhooks/…" autocomplete="off" />
+        <span class="hint" id="webhookInfo"></span>
         <div class="row two">
           <div>
             <label for="username">Nombre (opcional)</label>
@@ -57,6 +58,19 @@
         <label for="content">Texto del mensaje</label>
         <textarea id="content" rows="3" maxlength="2000" placeholder="Escribe el mensaje que acompaña a los embeds (opcional si ya hay embeds)…"></textarea>
         <span class="hint" id="contentCounter">0 / 2000</span>
+      </div>
+
+      <div class="panel-head">
+        <h2>02b — Importar formato</h2>
+      </div>
+      <div class="field-group">
+        <label for="importUrl">URL de otro embed / mensaje (copia el formato)</label>
+        <div class="row" style="grid-template-columns: 1fr auto; margin-top:4px;">
+          <input type="text" id="importUrl" placeholder="https://discord.com/channels/...  o  https://.../embed.json  o pega JSON directo" autocomplete="off" />
+          <button type="button" class="btn ghost" id="importBtn" style="white-space:nowrap;">Copiar formato</button>
+        </div>
+        <span class="hint">Acepta link de mensaje Discord (requiere DISCORD_BOT_TOKEN), URL con JSON, o JSON crudo de Discohook.</span>
+        <p class="form-message" id="importMessage" role="status"></p>
       </div>
 
       <div class="panel-head panel-head-actions">

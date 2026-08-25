@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
+const fetch = require('node-fetch');
 const db = require('./db');
 const scheduler = require('./scheduler');
 
@@ -160,6 +161,122 @@ app.post('/api/messages/:id/send-now', async (req, res) => {
 app.delete('/api/messages/:id', (req, res) => {
   db.prepare(`DELETE FROM messages WHERE id = ?`).run(req.params.id);
   res.status(204).end();
+});
+
+// Info de webhook (para autocarga como Discohook) - GET directo a Discord sin CORS
+app.get('/api/webhook-info', async (req, res) => {
+  const url = (req.query.url || '').trim();
+  if (!url || !/^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(url)) {
+    return res.status(400).json({ errors: ['URL de webhook no valida.'] });
+  }
+  try {
+    const r = await fetch(url, { method: 'GET', headers: { 'User-Agent': 'Dispatch/1.0' } });
+    const text = await r.text();
+    if (!r.ok) return res.status(r.status).json({ errors: [`Discord ${r.status}: ${text.slice(0, 300)}`] });
+    const data = JSON.parse(text);
+    // data: {id, type, guild_id, channel_id, name, avatar, token}
+    let avatarUrl = null;
+    if (data.avatar) avatarUrl = `https://cdn.discordapp.com/avatars/${data.id}/${data.avatar}.png`;
+    // alternative webhook avatar endpoint also works
+    res.json({ id: data.id, name: data.name, avatar: data.avatar, avatarUrl, channel_id: data.channel_id, guild_id: data.guild_id, type: data.type });
+  } catch (e) {
+    res.status(502).json({ errors: [String(e.message || e)] });
+  }
+});
+
+// Importar formato desde URL de otro embed/mensaje (copia formato)
+app.post('/api/import', async (req, res) => {
+  const url = (req.body.url || '').trim();
+  if (!url) return res.status(400).json({ errors: ['URL requerida.'] });
+  if (!/^https?:\/\//i.test(url)) return res.status(400).json({ errors: ['URL debe empezar por http:// o https://'] });
+
+  // Caso especial: link de mensaje de Discord https://discord.com/channels/<guild>/<channel>/<message>
+  // Intenta primero via webhook (como Discohook) si hay webhookUrl, luego via bot token
+  const discordMsgMatch = url.match(/discord(?:app)?\.com\/channels\/\d+\/(\d+)\/(\d+)/);
+  if (discordMsgMatch) {
+    const channelId = discordMsgMatch[1];
+    const messageId = discordMsgMatch[2];
+    const webhookUrl = (req.body.webhookUrl || '').trim();
+
+    // 1) Intento via webhook token (igual que Discohook: GET /webhooks/{id}/{token}/messages/{messageId})
+    if (webhookUrl && /^https:\/\/(discord|discordapp)\.com\/api\/webhooks\/\d+\/.+/.test(webhookUrl)) {
+      try {
+        const m = webhookUrl.match(/\/api\/webhooks\/(\d+)\/([^/?#]+)/);
+        if (m) {
+          const whId = m[1], whToken = m[2].split('?')[0];
+          const r = await fetch(`https://discord.com/api/v10/webhooks/${whId}/${whToken}/messages/${messageId}`, {
+            headers: { 'User-Agent': 'Dispatch/1.0' }
+          });
+          if (r.ok) {
+            const msg = await r.json();
+            return res.json({
+              content: msg.content || '',
+              embeds: (msg.embeds || []).slice(0, 10),
+              username: msg.author?.username || '',
+              avatarUrl: msg.author?.avatar ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png` : ''
+            });
+          }
+          // si 404 puede ser mensaje no es del webhook, seguimos a bot token
+          const t = await r.text().catch(() => '');
+          if (r.status !== 404) {
+            return res.status(502).json({ errors: [`Webhook API ${r.status}: ${t.slice(0, 300)}`] });
+          }
+        }
+      } catch (e) {
+        // ignora y prueba bot token
+      }
+    }
+
+    const token = process.env.DISCORD_BOT_TOKEN;
+    if (token) {
+      try {
+        const r = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {
+          headers: { Authorization: `Bot ${token}` }
+        });
+        if (!r.ok) {
+          const t = await r.text().catch(() => '');
+          return res.status(502).json({ errors: [`Discord API ${r.status}: ${t.slice(0, 300)}`] });
+        }
+        const msg = await r.json();
+        return res.json({
+          content: msg.content || '',
+          embeds: (msg.embeds || []).slice(0, 10),
+          username: msg.author?.username || '',
+          avatarUrl: msg.author?.avatar ? `https://cdn.discordapp.com/avatars/${msg.author.id}/${msg.author.avatar}.png` : ''
+        });
+      } catch (e) {
+        return res.status(502).json({ errors: [String(e.message || e)] });
+      }
+    }
+    return res.status(400).json({ errors: ['Para cargar un mensaje de Discord pega el webhook del mismo canal arriba y vuelve a pulsar Copiar formato. El mensaje debe haber sido enviado por ese webhook (como hace Discohook: GET /webhooks/{id}/{token}/messages/{id}). Alternativa sin webhook: configura DISCORD_BOT_TOKEN en Railway o pega el JSON directo del mensaje.'] });
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const r = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'Dispatch-import/1.0' } });
+    clearTimeout(timeout);
+    if (!r.ok) return res.status(502).json({ errors: [`Fetch ${r.status}: ${(await r.text().catch(() => '')).slice(0, 300)}`] });
+    const text = (await r.text()).replace(/^\uFEFF/, '').trim();
+    let data;
+    try { data = JSON.parse(text); } catch { return res.status(400).json({ errors: ['La URL no devolvio JSON valido. Pega directamente el JSON del embed si lo tienes.'] }); }
+
+    // Normalizar: acepta {content, embeds} , {data:{content,embeds}}, [embeds], o mensaje Discord
+    if (Array.isArray(data)) data = { embeds: data };
+    if (data.data && (data.data.embeds || data.data.content)) data = data.data;
+    // Discohook a veces usa {embeds:[...]} directo
+    const embeds = (data.embeds || data.embed || []).slice(0, 10);
+    const content = data.content || '';
+    const username = data.username || data.author?.username || '';
+    const avatarUrl = data.avatar_url || data.avatarUrl || data.author?.avatar_url || '';
+
+    if (!content && embeds.length === 0) {
+      return res.status(400).json({ errors: ['No se encontraron embeds ni contenido en esa URL.'] });
+    }
+    return res.json({ content, embeds, username, avatarUrl });
+  } catch (e) {
+    return res.status(502).json({ errors: [String(e.message || e)] });
+  }
 });
 
 // Probar un webhook enviando el payload actual sin guardarlo

@@ -7,6 +7,7 @@ const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 const el = {
   webhookUrl: $('#webhookUrl'),
+  webhookInfo: $('#webhookInfo'),
   username: $('#username'),
   avatarUrl: $('#avatarUrl'),
   content: $('#content'),
@@ -19,6 +20,9 @@ const el = {
   testBtn: $('#testBtn'),
   scheduleBtn: $('#scheduleBtn'),
   formMessage: $('#formMessage'),
+  importUrl: $('#importUrl'),
+  importBtn: $('#importBtn'),
+  importMessage: $('#importMessage'),
   previewAvatar: $('#previewAvatar'),
   previewUsername: $('#previewUsername'),
   previewContent: $('#previewContent'),
@@ -30,6 +34,41 @@ const el = {
 };
 
 el.tzLabel.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// ---------- Autocarga webhook como Discohook ----------
+let webhookTimer = null;
+async function loadWebhookInfo() {
+  const url = el.webhookUrl.value.trim();
+  if (!/^https:\/\/(discord|discordapp)\.com\/api\/webhooks\//.test(url)) {
+    if (el.webhookInfo) el.webhookInfo.textContent = '';
+    return;
+  }
+  if (el.webhookInfo) el.webhookInfo.textContent = 'Verificando webhook…';
+  try {
+    const r = await fetch(`/api/webhook-info?url=${encodeURIComponent(url)}`);
+    const data = await r.json();
+    if (!r.ok) throw new Error((data.errors || ['Webhook no valido']).join(' '));
+    if (el.webhookInfo) {
+      el.webhookInfo.textContent = `✓ ${data.name || 'Webhook'} ${data.channel_id ? '· #' + data.channel_id : ''}`;
+      el.webhookInfo.style.color = 'var(--success)';
+    }
+    // Auto-rellena nombre/avatar solo si estan vacios (como Discohook)
+    if (data.name && !el.username.value.trim()) { el.username.value = data.name; renderPreview(); }
+    if (data.avatarUrl && !el.avatarUrl.value.trim()) { el.avatarUrl.value = data.avatarUrl; renderPreview(); }
+  } catch (e) {
+    if (el.webhookInfo) {
+      el.webhookInfo.textContent = e.message;
+      el.webhookInfo.style.color = 'var(--danger)';
+    }
+  }
+}
+el.webhookUrl.addEventListener('input', () => {
+  if (el.webhookInfo) { el.webhookInfo.style.color = ''; }
+  clearTimeout(webhookTimer);
+  webhookTimer = setTimeout(loadWebhookInfo, 700);
+});
+el.webhookUrl.addEventListener('blur', loadWebhookInfo);
+el.webhookUrl.addEventListener('paste', () => setTimeout(loadWebhookInfo, 100));
 
 // ---------- Utilidades ----------
 function escapeHtml(str) {
@@ -312,8 +351,69 @@ function showFormMessage(text, type) {
   el.formMessage.textContent = text;
   el.formMessage.className = 'form-message' + (type ? ' ' + type : '');
 }
+function showImportMessage(text, type) {
+  el.importMessage.textContent = text;
+  el.importMessage.className = 'form-message' + (type ? ' ' + type : '');
+}
+
+function applyImportedData(data) {
+  if (typeof data.content === 'string') {
+    el.content.value = data.content;
+    el.contentCounter.textContent = `${el.content.value.length} / 2000`;
+  }
+  if (data.username) el.username.value = data.username;
+  if (data.avatarUrl) el.avatarUrl.value = data.avatarUrl;
+  if (Array.isArray(data.embeds)) {
+    // reemplazar embeds actuales por los importados
+    embeds = data.embeds.slice(0, 10).map((e) => ({
+      color: e.color ?? hexToInt('#f2a93b'),
+      author: { name: e.author?.name || '', icon_url: e.author?.icon_url || '' },
+      title: e.title || '',
+      url: e.url || '',
+      description: e.description || '',
+      fields: (e.fields || []).map((f) => ({ name: f.name || '', value: f.value || '', inline: !!f.inline })),
+      image: { url: e.image?.url || '' },
+      thumbnail: { url: e.thumbnail?.url || '' },
+      footer: { text: e.footer?.text || '', icon_url: e.footer?.icon_url || '' },
+      useTimestamp: !!e.timestamp,
+    }));
+    el.embedsList.innerHTML = '';
+    embeds.forEach(addEmbedCard);
+  }
+  renderPreview();
+}
 
 // ---------- Acciones ----------
+el.importBtn?.addEventListener('click', async () => {
+  const raw = el.importUrl.value.trim();
+  if (!raw) { showImportMessage('Pega una URL o JSON.', 'error'); return; }
+  // Si parece JSON directo, no llamar al servidor
+  if (raw.startsWith('{') || raw.startsWith('[')) {
+    try {
+      let data = JSON.parse(raw);
+      if (Array.isArray(data)) data = { embeds: data };
+      if (data.data && (data.data.embeds || data.data.content)) data = data.data;
+      applyImportedData(data);
+      showImportMessage(`Formato copiado: ${Array.isArray(data.embeds) ? data.embeds.length : 0} embed(s)`, 'success');
+    } catch (e) { showImportMessage('JSON invalido: ' + e.message, 'error'); }
+    return;
+  }
+  showImportMessage('Importando…', '');
+  try {
+    const res = await fetch('/api/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: raw, webhookUrl: el.webhookUrl.value.trim() })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error((data.errors || ['Error desconocido']).join(' '));
+    applyImportedData(data);
+    showImportMessage(`Formato copiado: ${data.embeds?.length || 0} embed(s) ✓`, 'success');
+  } catch (err) {
+    showImportMessage(err.message, 'error');
+  }
+});
+
 el.testBtn.addEventListener('click', async () => {
   showFormMessage('Enviando prueba…', '');
   try {
@@ -400,6 +500,7 @@ function loadMessageIntoForm(msg) {
   el.embedsList.innerHTML = '';
   embeds.forEach(addEmbedCard);
   renderPreview();
+  loadWebhookInfo();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 

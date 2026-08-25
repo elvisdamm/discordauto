@@ -12,6 +12,7 @@ COPY . .
 
 # Railway inyecta PORT automaticamente
 ENV NODE_ENV=production
+ENV DATABASE_PATH=/data/data.sqlite
 EXPOSE 3000
 
 CMD ["node", "server.js"]

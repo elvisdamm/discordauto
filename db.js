@@ -1,12 +1,20 @@
+const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
 // Railway: usa Volume montado en /data. Local: usa data.sqlite junto al codigo.
 // Permite override con DATABASE_PATH (ej: /data/data.sqlite)
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'data.sqlite');
-
-const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
+try { fs.mkdirSync(path.dirname(dbPath), { recursive: true }); } catch {}
+console.log(`[db] usando ${dbPath} (DATABASE_PATH=${process.env.DATABASE_PATH || 'default'})`);
+let db;
+try {
+  db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+} catch (e) {
+  console.error(`[db] fallo abriendo ${dbPath}:`, e.message);
+  throw e;
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS messages (

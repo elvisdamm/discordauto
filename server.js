@@ -297,7 +297,10 @@ app.post('/api/test-webhook', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Servidor escuchando en http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Servidor escuchando en 0.0.0.0:${PORT} (PORT=${process.env.PORT}, DATABASE_PATH=${process.env.DATABASE_PATH || 'default'})`);
   scheduler.start();
+}).on('error', (err) => {
+  console.error('[server] listen error:', err);
+  process.exit(1);
 });

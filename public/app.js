@@ -246,13 +246,6 @@ function renderPreview() {
       });
       main.appendChild(grid);
     }
-    if (embed.footer.text) {
-      const f = document.createElement('div');
-      f.className = 'd-embed-footer';
-      if (embed.footer.icon_url) f.innerHTML = `<img src="${escapeHtml(embed.footer.icon_url)}" alt="">`;
-      f.innerHTML += `<span>${escapeHtml(embed.footer.text)}</span>`;
-      main.appendChild(f);
-    }
 
     box.appendChild(main);
     if (embed.thumbnail.url) {
@@ -266,6 +259,13 @@ function renderPreview() {
       im.className = 'd-embed-image';
       im.src = embed.image.url;
       box.appendChild(im);
+    }
+    if (embed.footer.text) {
+      const f = document.createElement('div');
+      f.className = 'd-embed-footer';
+      if (embed.footer.icon_url) f.innerHTML = `<img src="${escapeHtml(embed.footer.icon_url)}" alt="">`;
+      f.innerHTML += `<span>${escapeHtml(embed.footer.text)}</span>`;
+      box.appendChild(f);
     }
     el.previewEmbeds.appendChild(box);
   });

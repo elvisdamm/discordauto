@@ -425,6 +425,9 @@ input[type="color"].embed-color {
   margin-top: 8px;
 }
 .d-embed-footer img { width: 16px; height: 16px; border-radius: 50%; }
+.d-embed > .d-embed-footer {
+  grid-column: 1 / -1;
+}
 
 /* ---------- Queue / timeline (signature element) ---------- */
 .queue-empty {

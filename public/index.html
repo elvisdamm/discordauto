@@ -21,11 +21,28 @@
         <p>Consola de mensajes programados para Discord</p>
       </div>
     </div>
-    <div class="topbar-status" id="cronStatus">
-      <span class="pulse-dot" id="pulseDot"></span>
-      <span id="cronStatusText">Comprobando cola…</span>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div class="auth-inline" id="authInline" style="display:flex; align-items:center; gap:6px;">
+        <input type="password" id="authToken" placeholder="Token" style="width:160px; padding:6px 8px; font-size:12px;" autocomplete="off" />
+        <button type="button" class="btn ghost small" id="authSaveBtn">Guardar</button>
+        <span id="authStatus" class="hint" style="font-size:11px;"></span>
+      </div>
+      <div class="topbar-status" id="cronStatus">
+        <span class="pulse-dot" id="pulseDot"></span>
+        <span id="cronStatusText">Comprobando cola…</span>
+      </div>
     </div>
   </header>
+
+  <div id="authOverlay" style="display:none; position:fixed; inset:0; background:rgba(20,22,27,0.92); z-index:99; align-items:center; justify-content:center;">
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:28px; max-width:420px; width:90%; text-align:center;">
+      <h2 style="margin:0 0 8px; font-family:var(--font-display);">Panel protegido</h2>
+      <p style="color:var(--text-muted); font-size:13px; margin:0 0 16px;">Este panel requiere token. Configura <code>AUTH_TOKEN</code> en Railway y pégalo aquí.</p>
+      <input type="password" id="authOverlayInput" placeholder="Pega tu token aquí" style="width:100%; padding:10px 12px; margin-bottom:10px;" />
+      <button type="button" class="btn primary" id="authOverlayBtn" style="width:100%;">Desbloquear</button>
+      <p id="authOverlayMsg" class="hint" style="margin-top:8px; color:var(--danger);"></p>
+    </div>
+  </div>
 
   <main class="layout">
 

@@ -1,6 +1,22 @@
 // ---------- Estado ----------
 let embeds = []; // cada embed es un objeto plano tipo Discord API
 let editingId = null; // si estamos editando un mensaje existente
+let authToken = localStorage.getItem('dispatch_token') || '';
+
+function getAuthHeaders() {
+  return authToken ? { 'X-Auth-Token': authToken } : {};
+}
+function authFetch(url, opts = {}) {
+  opts.headers = { ...(opts.headers || {}), ...getAuthHeaders() };
+  return fetch(url, opts);
+}
+function setAuthToken(token) {
+  authToken = (token || '').trim();
+  if (authToken) localStorage.setItem('dispatch_token', authToken);
+  else localStorage.removeItem('dispatch_token');
+  if (el.authToken) el.authToken.value = authToken;
+  if (el.authOverlayInput) el.authOverlayInput.value = authToken;
+}
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -31,9 +47,61 @@ const el = {
   queueEmpty: $('#queueEmpty'),
   refreshQueueBtn: $('#refreshQueueBtn'),
   cronStatusText: $('#cronStatusText'),
+  authToken: $('#authToken'),
+  authSaveBtn: $('#authSaveBtn'),
+  authStatus: $('#authStatus'),
+  authOverlay: $('#authOverlay'),
+  authOverlayInput: $('#authOverlayInput'),
+  authOverlayBtn: $('#authOverlayBtn'),
+  authOverlayMsg: $('#authOverlayMsg'),
 };
 
 el.tzLabel.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+// ---------- Auth ----------
+if (el.authToken) el.authToken.value = authToken;
+if (el.authOverlayInput) el.authOverlayInput.value = authToken;
+
+function showAuthOverlay(show, msg) {
+  if (!el.authOverlay) return;
+  el.authOverlay.style.display = show ? 'flex' : 'none';
+  if (msg && el.authOverlayMsg) el.authOverlayMsg.textContent = msg;
+}
+function updateAuthStatus(ok, protectedMode) {
+  if (!el.authStatus) return;
+  if (!protectedMode) { el.authStatus.textContent = 'sin protección'; el.authStatus.style.color = 'var(--text-faint)'; return; }
+  if (ok) { el.authStatus.textContent = '✓ desbloqueado'; el.authStatus.style.color = 'var(--success)'; }
+  else { el.authStatus.textContent = 'bloqueado'; el.authStatus.style.color = 'var(--danger)'; }
+}
+async function checkAuth() {
+  try {
+    const r = await authFetch('/api/auth-check');
+    const data = await r.json().catch(() => ({}));
+    if (!data.protected) { showAuthOverlay(false); updateAuthStatus(true, false); return true; }
+    if (r.ok && data.ok) { showAuthOverlay(false); updateAuthStatus(true, true); return true; }
+    showAuthOverlay(true, 'Token requerido o inválido.');
+    updateAuthStatus(false, true);
+    return false;
+  } catch (e) {
+    // si no hay auth, no bloqueamos
+    return true;
+  }
+}
+async function saveTokenFromInput(inputEl) {
+  const t = inputEl.value.trim();
+  setAuthToken(t);
+  const ok = await checkAuth();
+  if (ok) {
+    if (el.authStatus) { el.authStatus.textContent = '✓ guardado'; setTimeout(() => checkAuth(), 1200); }
+    loadQueue();
+  } else {
+    if (el.authOverlayMsg) el.authOverlayMsg.textContent = 'Token incorrecto.';
+  }
+}
+el.authSaveBtn?.addEventListener('click', () => saveTokenFromInput(el.authToken));
+el.authToken?.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveTokenFromInput(el.authToken); });
+el.authOverlayBtn?.addEventListener('click', () => saveTokenFromInput(el.authOverlayInput));
+el.authOverlayInput?.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveTokenFromInput(el.authOverlayInput); });
 
 // ---------- Autocarga webhook como Discohook ----------
 let webhookTimer = null;
@@ -45,7 +113,7 @@ async function loadWebhookInfo() {
   }
   if (el.webhookInfo) el.webhookInfo.textContent = 'Verificando webhook…';
   try {
-    const r = await fetch(`/api/webhook-info?url=${encodeURIComponent(url)}`);
+    const r = await authFetch(`/api/webhook-info?url=${encodeURIComponent(url)}`);
     const data = await r.json();
     if (!r.ok) throw new Error((data.errors || ['Webhook no valido']).join(' '));
     if (el.webhookInfo) {
@@ -400,7 +468,7 @@ el.importBtn?.addEventListener('click', async () => {
   }
   showImportMessage('Importando…', '');
   try {
-    const res = await fetch('/api/import', {
+    const res = await authFetch('/api/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: raw, webhookUrl: el.webhookUrl.value.trim() })
@@ -417,7 +485,7 @@ el.importBtn?.addEventListener('click', async () => {
 el.testBtn.addEventListener('click', async () => {
   showFormMessage('Enviando prueba…', '');
   try {
-    const res = await fetch('/api/test-webhook', {
+    const res = await authFetch('/api/test-webhook', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(buildBasePayload()),
@@ -445,7 +513,7 @@ el.scheduleBtn.addEventListener('click', async () => {
   try {
     const url = editingId ? `/api/messages/${editingId}` : '/api/messages';
     const method = editingId ? 'PUT' : 'POST';
-    const res = await fetch(url, {
+    const res = await authFetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -507,7 +575,14 @@ function loadMessageIntoForm(msg) {
 // ---------- Cola de despacho ----------
 async function loadQueue() {
   try {
-    const res = await fetch('/api/messages');
+    const res = await authFetch('/api/messages');
+    if (res.status === 401) {
+      const data = await res.json().catch(() => ({}));
+      if (data.errors) el.cronStatusText.textContent = 'No autorizado - revisa token';
+      showAuthOverlay(true, 'Token requerido.');
+      updateAuthStatus(false, true);
+      return;
+    }
     const rows = await res.json();
     renderQueue(rows);
     el.cronStatusText.textContent = `Cola activa · ${rows.filter(r => r.status === 'pending').length} pendientes`;
@@ -551,11 +626,11 @@ function renderQueue(rows) {
     if (msg.status === 'pending') {
       addBtn('Editar', () => loadMessageIntoForm(msg));
       addBtn('Enviar ahora', async () => {
-        await fetch(`/api/messages/${msg.id}/send-now`, { method: 'POST' });
+        await authFetch(`/api/messages/${msg.id}/send-now`, { method: 'POST' });
         loadQueue();
       });
       addBtn('Cancelar', async () => {
-        await fetch(`/api/messages/${msg.id}/cancel`, { method: 'POST' });
+        await authFetch(`/api/messages/${msg.id}/cancel`, { method: 'POST' });
         loadQueue();
       }, true);
     } else {
@@ -563,7 +638,7 @@ function renderQueue(rows) {
         addBtn('Reprogramar', async () => {
           const iso = prompt('Nueva fecha/hora (formato: 2025-01-31T18:30):');
           if (!iso) return;
-          await fetch(`/api/messages/${msg.id}/requeue`, {
+          await authFetch(`/api/messages/${msg.id}/requeue`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ scheduledAt: new Date(iso).toISOString() }),
@@ -572,7 +647,7 @@ function renderQueue(rows) {
         });
       }
       addBtn('Eliminar', async () => {
-        await fetch(`/api/messages/${msg.id}`, { method: 'DELETE' });
+        await authFetch(`/api/messages/${msg.id}`, { method: 'DELETE' });
         loadQueue();
       }, true);
     }
@@ -593,6 +668,6 @@ el.refreshQueueBtn.addEventListener('click', loadQueue);
 
 // ---------- Init ----------
 renderPreview();
-loadQueue();
-setInterval(loadQueue, 15000);
+checkAuth().then(() => loadQueue());
+setInterval(() => { checkAuth().then(ok => { if (ok) loadQueue(); }); }, 15000);
 setInterval(tickCountdowns, 1000);

@@ -13,10 +13,42 @@ try { scheduler = require('./scheduler'); console.log('[server] scheduler cargad
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const AUTH_TOKEN = (process.env.AUTH_TOKEN || process.env.ADMIN_TOKEN || process.env.PANEL_PASSWORD || '').trim();
 
+if (AUTH_TOKEN) console.log('[auth] proteccion activa (AUTH_TOKEN configurado)');
+else console.log('[auth] SIN proteccion - cualquiera con la URL puede usar la API. Configura AUTH_TOKEN en Railway para protegerla.');
+
+function requireAuth(req, res, next) {
+  if (!AUTH_TOKEN) return next();
+  // permitir health sin auth
+  if (req.path === '/health') return next();
+  const headerToken = (req.headers['x-auth-token'] || '').trim();
+  const bearer = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+  const queryToken = (req.query.token || '').trim();
+  const provided = headerToken || bearer || queryToken;
+  if (provided && provided === AUTH_TOKEN) return next();
+  return res.status(401).json({ errors: ['No autorizado. Falta o es incorrecto el token. Configura el token en el panel.'] });
+}
+
+// Health siempre abierto
 app.use(express.json({ limit: '2mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
+
+// Endpoint para verificar si el panel esta protegido y validar token
+app.get('/api/auth-check', (req, res) => {
+  if (!AUTH_TOKEN) return res.json({ protected: false, ok: true });
+  const headerToken = (req.headers['x-auth-token'] || '').trim();
+  const bearer = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '').trim();
+  const queryToken = (req.query.token || '').trim();
+  const provided = headerToken || bearer || queryToken;
+  if (provided === AUTH_TOKEN) return res.json({ protected: true, ok: true });
+  return res.status(401).json({ protected: true, ok: false, errors: ['Token invalido'] });
+});
+
+// Proteger toda la API
+app.use('/api', requireAuth);
+
+app.use(express.static(path.join(__dirname, 'public')));
 
 function rowToApi(row) {
   return {
